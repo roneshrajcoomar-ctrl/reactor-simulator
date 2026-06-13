@@ -1,81 +1,154 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Educational Reactor Simulator", layout="wide")
+st.set_page_config(page_title="Nuclear Reactor Safety Simulator", layout="wide")
 
-st.title("Educational Reactor Simulator")
-st.write("This is a simplified educational simulation and is not a real reactor model.")
+st.markdown("""
+<style>
+.stApp { background-color: #111111; color: white; }
+h1, h2, h3, p, label { color: white; }
+[data-testid="stMetricValue"] { color: white; }
+.reactor-box {
+    border: 3px solid white;
+    border-radius: 20px;
+    padding: 25px;
+    background-color: #1b1b1b;
+}
+.core {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: orange;
+    margin: auto;
+    text-align: center;
+    line-height: 180px;
+    font-size: 32px;
+    font-weight: bold;
+    color: black;
+}
+.rod {
+    background: #3333ff;
+    width: 35px;
+    display: inline-block;
+    margin: 10px;
+    border: 2px solid white;
+}
+.statusbox {
+    padding: 20px;
+    border-radius: 10px;
+    background-color: #222222;
+    border: 2px solid #444444;
+}
+</style>
+""", unsafe_allow_html=True)
 
-rod = st.sidebar.slider("Control Rod Insertion", 0.0, 1.0, 0.45, 0.01)
-cooling = st.sidebar.slider("Cooling Strength", 0.005, 0.08, 0.02, 0.001)
-start_power = st.sidebar.slider("Starting Power", 0.1, 5.0, 1.0, 0.1)
-shutdown_temp = st.sidebar.slider("Emergency Shutdown Temperature", 400, 1200, 800, 10)
+st.title("Nuclear Reactor Safety Simulator")
+st.write("Simplified educational model — not a real reactor simulation.")
 
-dt = 0.02
-total_time = 80
-steps = int(total_time / dt)
+rod = st.sidebar.slider("Control Rod Insertion (%)", 0, 100, 45)
+cooling = st.sidebar.slider("Coolant Flow (%)", 0, 100, 50)
+start_power = st.sidebar.slider("Starting Power (%)", 10, 100, 45)
+shutdown = st.sidebar.button("Emergency Shutdown")
 
-power = start_power
-temperature = 300
+rod_fraction = rod / 100
+cooling_fraction = cooling / 100
+power = start_power / 100
+temperature = 250
+
+if shutdown:
+    rod_fraction = 1.0
+    rod = 100
 
 times = []
 powers = []
 temps = []
-rod_positions = []
+
+dt = 0.05
+steps = 500
 
 for i in range(steps):
     t = i * dt
-    current_rod = rod
 
-    if temperature > shutdown_temp:
-        current_rod = 1.0
-
-    reactivity = 0.08 - 0.15 * current_rod
-
+    reactivity = 0.06 - 0.12 * rod_fraction
     power += reactivity * power * dt
-    power = max(power, 0)
+    power = max(0, min(power, 2.0))
 
-    heat_generated = 20 * power
-    heat_removed = cooling * (temperature - 300)
+    heat_generated = 18 * power
+    heat_removed = cooling_fraction * 8 * ((temperature - 250) / 100)
 
     temperature += (heat_generated - heat_removed) * dt
+    temperature = max(250, temperature)
+
+    if temperature > 850:
+        rod_fraction = 1.0
+        rod = 100
 
     times.append(t)
-    powers.append(power)
+    powers.append(power * 100)
     temps.append(temperature)
-    rod_positions.append(current_rod)
 
-col1, col2, col3 = st.columns(3)
+final_power = powers[-1]
+final_temp = temps[-1]
 
-col1.metric("Power", f"{powers[-1]:.2f}")
-col2.metric("Temperature", f"{temps[-1]:.0f} K")
-col3.metric("Rod Position", f"{rod_positions[-1]*100:.0f}%")
-
-if temps[-1] < 600:
-    st.success("Status: Stable")
-elif temps[-1] < shutdown_temp:
-    st.warning("Status: Heating Up")
+if final_temp < 500:
+    status = "Stable"
+    status_colour = "lime"
+elif final_temp < 850:
+    status = "Warning"
+    status_colour = "orange"
 else:
-    st.error("Status: Emergency Shutdown Triggered")
+    status = "Emergency Shutdown"
+    status_colour = "red"
+
+left, right = st.columns([2, 1])
+
+with left:
+    st.markdown("<div class='reactor-box'>", unsafe_allow_html=True)
+    st.subheader("Simplified Nuclear Reactor Model")
+
+    rod_height = int(40 + rod * 2)
+
+    st.markdown(f"""
+    <div style="text-align:center;">
+        <p><b>Control Rods</b></p>
+        <div class="rod" style="height:{rod_height}px;"></div>
+        <div class="rod" style="height:{rod_height}px;"></div>
+        <div class="rod" style="height:{rod_height}px;"></div>
+        <div class="rod" style="height:{rod_height}px;"></div>
+        <br><br>
+        <div class="core">CORE</div>
+        <br>
+        <p style="color:cyan;">Coolant In → Reactor Core → Coolant Out</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.progress(min(int(final_power), 100), text=f"Power Output: {final_power:.0f}%")
+    st.progress(min(int((final_temp - 250) / 8), 100), text=f"Core Temperature: {final_temp:.0f} °C")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with right:
+    st.markdown("<div class='statusbox'>", unsafe_allow_html=True)
+    st.header("Control Panel")
+    st.markdown(f"<h2 style='color:{status_colour};'>Status: {status}</h2>", unsafe_allow_html=True)
+    st.metric("Core Temperature", f"{final_temp:.0f} °C")
+    st.metric("Power Output", f"{final_power:.0f}%")
+    st.metric("Control Rod Insertion", f"{rod}%")
+    st.metric("Coolant Flow", f"{cooling}%")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.subheader("Simulation Graphs")
 
 fig1, ax1 = plt.subplots()
 ax1.plot(times, powers)
-ax1.set_title("Reactor Power")
+ax1.set_title("Power Output Over Time")
 ax1.set_xlabel("Time")
-ax1.set_ylabel("Power")
+ax1.set_ylabel("Power (%)")
 st.pyplot(fig1)
 
 fig2, ax2 = plt.subplots()
 ax2.plot(times, temps)
-ax2.axhline(shutdown_temp, linestyle="--")
-ax2.set_title("Temperature")
+ax2.set_title("Core Temperature Over Time")
 ax2.set_xlabel("Time")
-ax2.set_ylabel("Temperature (K)")
+ax2.set_ylabel("Temperature (°C)")
 st.pyplot(fig2)
-
-fig3, ax3 = plt.subplots()
-ax3.plot(times, rod_positions)
-ax3.set_title("Control Rod Position")
-ax3.set_xlabel("Time")
-ax3.set_ylabel("Insertion")
-st.pyplot(fig3)
